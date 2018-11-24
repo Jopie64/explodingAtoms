@@ -1,5 +1,7 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
+import { Subscription } from 'rxjs';
+import { msElapsed } from '../tools';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
 
@@ -8,7 +10,7 @@ import * as THREE from 'three';
   templateUrl: './three-test.component.html',
   styleUrls: ['./three-test.component.css']
 })
-export class ThreeTestComponent implements OnInit, AfterViewInit {
+export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @ViewChild('rendererContainer') rendererContainer: ElementRef;
 
@@ -16,6 +18,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit {
   scene = null;
   camera = null;
   mesh = null;
+
+  cons = new Subscription();
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -32,16 +36,19 @@ export class ThreeTestComponent implements OnInit, AfterViewInit {
   ngOnInit() {
   }
 
+  ngOnDestroy() {
+    this.cons.unsubscribe();
+  }
+
   ngAfterViewInit() {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
-    this.animate();
+    this.cons.add(msElapsed().subscribe(time => this.animate(time)));
   }
 
-  animate() {
-    window.requestAnimationFrame(() => this.animate());
-    this.mesh.rotation.x += 0.01;
-    this.mesh.rotation.y += 0.02;
+  animate(time: number) {
+    this.mesh.rotation.x = time / 1000;
+    this.mesh.rotation.y = time / 500;
     this.renderer.render(this.scene, this.camera);
   }
 }

@@ -19,12 +19,19 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   camera = null;
   mesh = null;
 
+  width: number;
+  height: number;
+
+  nFrame = 0;
+
   cons = new Subscription();
 
   constructor() {
+    this.width = window.innerWidth;
+    this.height = window.innerHeight - 4;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 10000);
-    this.camera.position.z = 1000;
+    this.camera = new THREE.PerspectiveCamera(75, this.width / this.height, 1, 10000);
+    this.camera.position.z = 500;
 
     const geometry = new THREE.BoxGeometry(200, 200, 200);
     const material = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: true});
@@ -41,12 +48,13 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit() {
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(this.width, this.height);
     this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
     this.cons.add(msElapsed().subscribe(time => this.animate(time)));
   }
 
   animate(time: number) {
+    ++this.nFrame;
     this.mesh.rotation.x = time / 1000;
     this.mesh.rotation.y = time / 500;
     this.renderer.render(this.scene, this.camera);

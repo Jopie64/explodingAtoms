@@ -17,7 +17,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   renderer = new THREE.WebGLRenderer();
   scene = null;
   camera = null;
-  mesh = null;
+  fieldGrid = null;
 
   nFrame = 0;
 
@@ -29,12 +29,22 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const geometry = new THREE.BoxGeometry(200, 200, 200);
     const material = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: true});
-    this.mesh = new THREE.Mesh(geometry, material);
+    // this.mesh = new THREE.Mesh(geometry, material);
 
-    this.scene.add(this.mesh);
+    // this.scene.add(this.mesh);
+
+    this.buildScene();
   }
 
   ngOnInit() {
+  }
+
+  buildScene() {
+    const size = 400;
+    const divisions = 10;
+    this.fieldGrid = new THREE.GridHelper( size, divisions, 0xffff00, 0xffff00 );
+    this.fieldGrid.rotation.x = Math.PI / 2;
+    this.scene.add( this.fieldGrid );
   }
 
   onResize() {
@@ -57,8 +67,9 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   animate(time: number) {
     ++this.nFrame;
-    this.mesh.rotation.x = time / 1000;
-    this.mesh.rotation.y = time / 500;
+    // this.fieldGrid.rotation.x = time / 1000;
+    this.fieldGrid.rotation.z = Math.sin(time / 5000) / 3;
+    this.fieldGrid.rotation.x = Math.PI / 2 + Math.sin(time / 7000) / 4;
     this.renderer.render(this.scene, this.camera);
   }
 }

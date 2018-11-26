@@ -1,9 +1,15 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription } from 'rxjs';
+import { Subscription, fromEvent, Observable } from 'rxjs';
 import { msElapsed } from '../tools';
+import { map } from 'rxjs/operators';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
+
+interface Pos {
+  x: number;
+  y: number;
+}
 
 @Component({
   selector: 'app-three-test',
@@ -15,11 +21,18 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('rendererContainer') rendererContainer: ElementRef;
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
+  rayCaster = new THREE.Raycaster();
   scene = null;
   camera = null;
   fieldGrid = null;
 
   nFrame = 0;
+
+  mouseMove$: Observable<MouseEvent>;
+  mouseDown$: Observable<MouseEvent>;
+  mouseUp$: Observable<MouseEvent>;
+
+  clientToScene: (e: MouseEvent) => Pos;
 
   cons = new Subscription();
 
@@ -63,7 +76,13 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     console.log(`Resizing... (${width}x${height})`);
     this.camera = new THREE.PerspectiveCamera(75, width / height, 1, 10000);
     this.camera.position.z = 10;
+    this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+
+    this.clientToScene = (e: MouseEvent) => ({
+      x:   ( e.clientX / window.innerWidth ) * 2 - 1,
+      y: - ( e.clientY / window.innerHeight ) * 2 + 1
+    });
   }
 
   ngOnDestroy() {
@@ -71,8 +90,19 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit() {
+    this.mouseMove$ = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
+    this.mouseDown$ = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
+    this.mouseUp$ = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
     this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
     this.cons.add(msElapsed().subscribe(time => this.animate(time)));
+    this.cons.add(this.mouseMove$.pipe(
+      map(v => this.clientToScene(v)),
+      map(v =>  {
+        this.rayCaster.setFromCamera(v, this.camera);
+        return this.rayCaster.intersectObjects(this.scene.children);
+        return v;
+      }))
+      .subscribe(v => console.log('*** Mouse move', v)));
   }
 
   animate(time: number) {

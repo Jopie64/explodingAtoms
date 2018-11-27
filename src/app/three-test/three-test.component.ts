@@ -2,7 +2,7 @@ import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } fr
 import * as THREE from 'three';
 import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, tap, take } from 'rxjs/operators';
+import { map, filter, tap, take, scan } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
@@ -131,35 +131,46 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     }));
 
     this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
-    this.cons.add(msElapsed().subscribe(time => this.animate(time)));
-    msElapsed().pipe(take(1)).subscribe(_ => {
-      this.cons.add(this.mouseMoveScene$.pipe(
-        map(v =>  {
-          this.rayCaster.setFromCamera(v, this.camera);
-          return this.rayCaster.intersectObjects(this.cellsGeometry.children);
-          // return v;
-        }))
-        .subscribe(v => {
-          console.log('*** Mouse move', v);
-          for (const i of v) {
-            if (i.object instanceof Mesh) {
-              if (i.object.material instanceof MeshLambertMaterial) {
-                console.log('Object content: ', i.object.name);
-                i.object.material.color.r = Math.random() * 1;
-                i.object.material.color.g = Math.random() * 1;
-                i.object.material.color.b = Math.random() * 1;
-              }
-            }
-          }
-        }));
-      });
+    this.cons.add(msElapsed().pipe(
+      scan<number, ({prev: number, diff: number, curr: number})>(({prev, diff, curr}, newCurr: number) => ({
+        prev: curr,
+        diff: newCurr - curr,
+        curr: newCurr
+      }), { prev: 0, diff: 0, curr: 0 })). subscribe(({prev, diff, curr}) => this.animate(curr, diff)));
+    msElapsed().pipe(take(1)).subscribe(_ => this.afterFirstFrame());
   }
 
-  animate(time: number) {
+  afterFirstFrame() {
+    this.cons.add(this.mouseMoveScene$.pipe(
+      map(v =>  {
+        this.rayCaster.setFromCamera(v, this.camera);
+        return this.rayCaster.intersectObjects(this.cellsGeometry.children);
+        // return v;
+      }))
+      .subscribe(v => {
+        console.log('*** Mouse move', v);
+        for (const i of v) {
+          if (i.object instanceof Mesh) {
+            if (i.object.material instanceof MeshLambertMaterial) {
+              console.log('Object content: ', i.object.name);
+              i.object.material.color.g = 1;
+            }
+          }
+        }
+      }));
+  }
+
+  animate(time: number, diffWithPrev: number) {
     ++this.nFrame;
     // this.fieldGrid.rotation.x = time / 1000;
     this.fieldGeometry.rotation.y = Math.sin(time / 50000) / 3;
     this.fieldGeometry.rotation.x = Math.sin(time / 70000) / 4;
+
+    this.cellsGeometry.children.forEach(cel => {
+      if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
+        cel.material.color.g *= Math.pow(.997, diffWithPrev);
+      }
+    });
     this.renderer.render(this.scene, this.camera);
   }
 }

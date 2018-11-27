@@ -1,15 +1,19 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable } from 'rxjs';
+import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map } from 'rxjs/operators';
+import { map, filter, tap, take } from 'rxjs/operators';
+import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
 
-interface Pos {
+interface Vector2d {
   x: number;
   y: number;
 }
+
+const SIZE = 10;
+const DIVISIONS = 10;
 
 @Component({
   selector: 'app-three-test',
@@ -24,15 +28,17 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   rayCaster = new THREE.Raycaster();
   scene = null;
   camera = null;
-  fieldGrid = null;
+  fieldGeometry: Object3D;
+  cellsGeometry: Object3D;
 
   nFrame = 0;
 
   mouseMove$: Observable<MouseEvent>;
   mouseDown$: Observable<MouseEvent>;
   mouseUp$: Observable<MouseEvent>;
+  windowSize$ = new BehaviorSubject<Vector2d>({x: 0, y: 0});
 
-  clientToScene: (e: MouseEvent) => Pos;
+  mouseMoveScene$: Observable<Vector2d>;
 
   cons = new Subscription();
 
@@ -53,21 +59,47 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   buildScene() {
-    this.scene.add( new THREE.AmbientLight( 0x404040, 0.3 )); // soft white light
+    this.scene.add( new THREE.AmbientLight( 0x404040, 0.6 )); // soft white light
     const light = new THREE.DirectionalLight( 0xffffff, 0.35 );
     light.position.set( 1, 1, 1 ).normalize();
     this.scene.add( light );
 
-    const size = 10;
-    const divisions = 10;
-    this.fieldGrid = new THREE.GridHelper( size, divisions, 0xffff00, 0xffff00 );
-    this.fieldGrid.rotation.x = Math.PI / 2;
-    this.scene.add( this.fieldGrid );
+    const fieldGroup = new THREE.Group();
+    const grid = new THREE.GridHelper( SIZE, DIVISIONS, 0xffffff, 0xffff00 );
+    grid.rotation.x = Math.PI / 2;
 
-    const geometry = new THREE.SphereGeometry( 2, 32, 32 );
-    const material = new THREE.MeshLambertMaterial( {color: 0xff0000} );
-    const sphere = new THREE.Mesh( geometry, material );
-    this.scene.add( sphere );
+    fieldGroup.add(grid);
+
+    const celGroup = new THREE.Group();
+    const planeSize = SIZE / DIVISIONS;
+    const bottom = -SIZE / 2;
+    const left = -SIZE / 2;
+    for (let y = 0; y < DIVISIONS; ++y) {
+      for (let x = 0; x < DIVISIONS; ++x) {
+        const material = new THREE.MeshLambertMaterial( {color: 0x555500} );
+        const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.setX(left + (x + .5) * planeSize);
+        mesh.position.setY(bottom + (y + .5) * planeSize);
+        mesh.name = JSON.stringify({plane: {x, y}});
+        celGroup.add(mesh);
+      }
+    }
+
+    console.log(celGroup);
+    fieldGroup.add(celGroup);
+
+    this.cellsGeometry = celGroup;
+    this.fieldGeometry = fieldGroup;
+
+    this.scene.add(fieldGroup);
+
+    {
+      const geometry = new THREE.SphereGeometry( 2, 32, 32 );
+      const material = new THREE.MeshLambertMaterial( {color: 0xff0000} );
+      const sphere = new THREE.Mesh( geometry, material );
+      // this.scene.add( sphere );
+    }
   }
 
   onResize() {
@@ -79,10 +111,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
 
-    this.clientToScene = (e: MouseEvent) => ({
-      x:   ( e.clientX / window.innerWidth ) * 2 - 1,
-      y: - ( e.clientY / window.innerHeight ) * 2 + 1
-    });
+    this.windowSize$.next({x: width, y: height});
   }
 
   ngOnDestroy() {
@@ -93,23 +122,44 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.mouseMove$ = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
     this.mouseDown$ = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
     this.mouseUp$ = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
+
+    this.mouseMoveScene$ = combineLatest(
+      this.mouseMove$, this.windowSize$.pipe(filter(v => v.x > 0), tap(console.log)),
+      (event: MouseEvent, wndSize: Vector2d) => ({
+      x:   ( event.clientX / wndSize.x ) * 2 - 1,
+      y: - ( event.clientY / wndSize.y ) * 2 + 1
+    }));
+
     this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
     this.cons.add(msElapsed().subscribe(time => this.animate(time)));
-    this.cons.add(this.mouseMove$.pipe(
-      map(v => this.clientToScene(v)),
-      map(v =>  {
-        this.rayCaster.setFromCamera(v, this.camera);
-        return this.rayCaster.intersectObjects(this.scene.children);
-        return v;
-      }))
-      .subscribe(v => console.log('*** Mouse move', v)));
+    msElapsed().pipe(take(1)).subscribe(_ => {
+      this.cons.add(this.mouseMoveScene$.pipe(
+        map(v =>  {
+          this.rayCaster.setFromCamera(v, this.camera);
+          return this.rayCaster.intersectObjects(this.cellsGeometry.children);
+          // return v;
+        }))
+        .subscribe(v => {
+          console.log('*** Mouse move', v);
+          for (const i of v) {
+            if (i.object instanceof Mesh) {
+              if (i.object.material instanceof MeshLambertMaterial) {
+                console.log('Object content: ', i.object.name);
+                i.object.material.color.r = Math.random() * 1;
+                i.object.material.color.g = Math.random() * 1;
+                i.object.material.color.b = Math.random() * 1;
+              }
+            }
+          }
+        }));
+      });
   }
 
   animate(time: number) {
     ++this.nFrame;
     // this.fieldGrid.rotation.x = time / 1000;
-    this.fieldGrid.rotation.z = Math.sin(time / 5000) / 3;
-    this.fieldGrid.rotation.x = Math.PI / 2 + Math.sin(time / 7000) / 4;
+    this.fieldGeometry.rotation.y = Math.sin(time / 50000) / 3;
+    this.fieldGeometry.rotation.x = Math.sin(time / 70000) / 4;
     this.renderer.render(this.scene, this.camera);
   }
 }

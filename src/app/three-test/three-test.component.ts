@@ -38,6 +38,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   cellsGeometry: Object3D;
 
   nFrame = 0;
+  currHover = '';
 
   mouseMove$: Observable<MouseEvent>;
   mouseDown$: Observable<MouseEvent>;
@@ -162,7 +163,10 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe(v => {
         if (v && v.material instanceof MeshLambertMaterial) {
           console.log('Object content: ', v.name);
+          this.currHover = v.name;
           v.material.color.g = 1;
+        } else {
+          this.currHover = '';
         }
       }));
   }
@@ -175,7 +179,9 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.cellsGeometry.children.forEach(cel => {
       if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
-        cel.material.color.g *= Math.pow(.998, diffWithPrev);
+        if (cel.name !== this.currHover) {
+          cel.material.color.g *= Math.pow(.998, diffWithPrev);
+        }
       }
     });
     this.renderer.render(this.scene, this.camera);

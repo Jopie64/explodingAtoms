@@ -1,8 +1,8 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest } from 'rxjs';
+import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, MonoTypeOperatorFunction, OperatorFunction } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, tap, take, scan } from 'rxjs/operators';
+import { map, filter, tap, take, scan, distinctUntilChanged } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
@@ -14,6 +14,12 @@ interface Vector2d {
 
 const SIZE = 10;
 const DIVISIONS = 10;
+
+const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
+  if (a === null && b === null) { return true; }
+  if (a === null || b === null) { return false; }
+  return a.name === b.name;
+};
 
 @Component({
   selector: 'app-three-test',
@@ -53,6 +59,16 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     // this.scene.add(this.mesh);
 
     this.buildScene();
+  }
+
+  pointToMesh(group: Object3D): OperatorFunction<Vector2d, Mesh | null> {
+    return in$ => in$.pipe(
+      map(v => {
+        this.rayCaster.setFromCamera(v, this.camera);
+        return this.rayCaster.intersectObjects(group.children);
+      }),
+      map(v => v.length > 0 && v[0].object instanceof Mesh ? v[0].object : null),
+      distinctUntilChanged(meshEqualPred));
   }
 
   ngOnInit() {
@@ -142,20 +158,11 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   afterFirstFrame() {
     this.cons.add(this.mouseMoveScene$.pipe(
-      map(v =>  {
-        this.rayCaster.setFromCamera(v, this.camera);
-        return this.rayCaster.intersectObjects(this.cellsGeometry.children);
-        // return v;
-      }))
+      this.pointToMesh(this.cellsGeometry))
       .subscribe(v => {
-        console.log('*** Mouse move', v);
-        for (const i of v) {
-          if (i.object instanceof Mesh) {
-            if (i.object.material instanceof MeshLambertMaterial) {
-              console.log('Object content: ', i.object.name);
-              i.object.material.color.g = 1;
-            }
-          }
+        if (v && v.material instanceof MeshLambertMaterial) {
+          console.log('Object content: ', v.name);
+          v.material.color.g = 1;
         }
       }));
   }
@@ -163,12 +170,12 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   animate(time: number, diffWithPrev: number) {
     ++this.nFrame;
     // this.fieldGrid.rotation.x = time / 1000;
-    this.fieldGeometry.rotation.y = Math.sin(time / 50000) / 3;
-    this.fieldGeometry.rotation.x = Math.sin(time / 70000) / 4;
+    this.fieldGeometry.rotation.y = Math.sin(time / 5000) / 3;
+    this.fieldGeometry.rotation.x = Math.sin(time / 7000) / 4;
 
     this.cellsGeometry.children.forEach(cel => {
       if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
-        cel.material.color.g *= Math.pow(.997, diffWithPrev);
+        cel.material.color.g *= Math.pow(.998, diffWithPrev);
       }
     });
     this.renderer.render(this.scene, this.camera);

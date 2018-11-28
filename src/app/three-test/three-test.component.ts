@@ -101,7 +101,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     const planeSize = SIZE / DIVISIONS;
     for (let y = 0; y < DIVISIONS; ++y) {
       for (let x = 0; x < DIVISIONS; ++x) {
-        const material = new THREE.MeshLambertMaterial( {color: 0x555500} );
+        const material = new THREE.MeshLambertMaterial( {color: 0x00ff00, transparent: true, opacity: 1} );
         const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
         const mesh = new THREE.Mesh(geometry, material);
         const pos = toScenePos({x, y});
@@ -120,13 +120,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.fieldGeometry = fieldGroup;
 
     this.scene.add(fieldGroup);
-
-    {
-      const geometry = new THREE.SphereGeometry( 2, 32, 32 );
-      const material = new THREE.MeshLambertMaterial( {color: 0xff0000} );
-      const sphere = new THREE.Mesh( geometry, material );
-      // this.scene.add( sphere );
-    }
   }
 
   onResize() {
@@ -185,7 +178,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
         if (v && v.material instanceof MeshLambertMaterial) {
           console.log('Object content: ', v.name);
           this.currHover = v.name;
-          v.material.color.g = 1;
+          v.material.opacity = 1;
         } else {
           this.currHover = '';
         }
@@ -210,7 +203,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
         sphere.position.setX(sPos.x);
         sphere.position.setY(sPos.y);
       }));
-      // this.scene.add( sphere );
       this.atoms.add(sphere);
     }));
   }
@@ -224,7 +216,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cellsGeometry.children.forEach(cel => {
       if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
         if (cel.name !== this.currHover) {
-          cel.material.color.g *= Math.pow(.998, diff);
+          cel.material.opacity *= Math.pow(.998, diff);
         }
       }
     });

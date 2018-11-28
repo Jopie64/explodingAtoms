@@ -32,8 +32,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   rayCaster = new THREE.Raycaster();
-  scene = null;
-  camera = null;
+  scene: THREE.Scene;
+  camera: THREE.Camera;
   fieldGeometry: Object3D;
   cellsGeometry: Object3D;
 
@@ -123,9 +123,10 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     const width = window.innerWidth;
     const height = window.innerHeight - 4;
     console.log(`Resizing... (${width}x${height})`);
-    this.camera = new THREE.PerspectiveCamera(75, width / height, 1, 10000);
-    this.camera.position.z = 10;
-    this.camera.updateProjectionMatrix();
+    const camera = new THREE.PerspectiveCamera(75, width / height, 1, 10000);
+    camera.position.z = 10;
+    camera.updateProjectionMatrix();
+    this.camera = camera;
     this.renderer.setSize(width, height);
 
     this.windowSize$.next({x: width, y: height});

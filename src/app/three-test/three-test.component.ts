@@ -1,8 +1,8 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject } from 'rxjs';
+import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject, of } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, tap, take, scan, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 import { makeAtomGame } from '../atomGame';
 
@@ -11,6 +11,11 @@ import { makeAtomGame } from '../atomGame';
 interface Vector2d {
   x: number;
   y: number;
+}
+
+interface SceneState {
+  scene: THREE.Scene;
+  camera: THREE.Camera;
 }
 
 const SIZE = 10;
@@ -32,6 +37,15 @@ const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
   return a.name === b.name;
 };
 
+const frame$ = msElapsed().pipe(
+  scan<number, ({prev: number, diff: number, curr: number})>(({prev, diff, curr}, newCurr: number) => ({
+    prev: curr,
+    diff: newCurr - curr,
+    curr: newCurr
+  }), { prev: 0, diff: 0, curr: 0 }),
+  map(({diff, curr}) => ({ diff, time: curr })),
+  publish(), refCount());
+
 @Component({
   selector: 'app-three-test',
   templateUrl: './three-test.component.html',
@@ -41,9 +55,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @ViewChild('rendererContainer') rendererContainer: ElementRef;
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
   rayCaster = new THREE.Raycaster();
-  scene: THREE.Scene;
   camera: THREE.Camera;
   fieldGeometry: Object3D;
   cellsGeometry: Object3D;
@@ -66,11 +78,24 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   cons = new Subscription();
 
   constructor() {
-    this.scene = new THREE.Scene();
     this.onResize();
 
-    this.buildScene();
   }
+
+
+  ngAfterViewInit() {
+    const renderer$ = of(new THREE.WebGLRenderer({ antialias: true })).pipe(
+      tap(renderer => this.rendererContainer.nativeElement.appendChild(renderer.domElement)),
+      switchMap(renderer => this.windowSize$.pipe(
+        tap(({x, y}) => renderer.setSize(x, y)),
+        mapTo(renderer)
+      ))
+    );
+    this.cons.add(combineLatest(renderer$, this.buildScene$()).subscribe(([renderer, v]) => {
+      renderer.render(v.scene, v.camera);
+    }));
+  }
+
 
   pointToMesh(group: Object3D): OperatorFunction<Vector2d, Mesh | null> {
     return in$ => in$.pipe(
@@ -85,11 +110,29 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit() {
   }
 
-  buildScene() {
-    this.scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.8 )); // soft white light
+  ngOnDestroy() {
+    this.cons.unsubscribe();
+  }
+
+  onResize() {
+    const width = window.innerWidth;
+    const height = window.innerHeight - 4;
+    console.log(`Resizing... (${width}x${height})`);
+    const camera = new THREE.PerspectiveCamera(75, width / height, 1, 10000);
+    camera.position.z = 10;
+    camera.updateProjectionMatrix();
+    this.camera = camera;
+
+    this.windowSize$.next({x: width, y: height});
+  }
+
+
+  buildScene$(): Observable<SceneState> {
+    const scene = new THREE.Scene();
+    scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.8 )); // soft white light
     const light = new THREE.DirectionalLight( 0xffffff, 0.35 );
     light.position.set( 1, 1, 1 ).normalize();
-    this.scene.add( light );
+    scene.add( light );
 
     const fieldGroup = new THREE.Group();
     const grid = new THREE.GridHelper( SIZE, DIVISIONS, 0xffffff, 0xffff00 );
@@ -119,27 +162,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cellsGeometry = celGroup;
     this.fieldGeometry = fieldGroup;
 
-    this.scene.add(fieldGroup);
-  }
+    scene.add(fieldGroup);
 
-  onResize() {
-    const width = window.innerWidth;
-    const height = window.innerHeight - 4;
-    console.log(`Resizing... (${width}x${height})`);
-    const camera = new THREE.PerspectiveCamera(75, width / height, 1, 10000);
-    camera.position.z = 10;
-    camera.updateProjectionMatrix();
-    this.camera = camera;
-    this.renderer.setSize(width, height);
-
-    this.windowSize$.next({x: width, y: height});
-  }
-
-  ngOnDestroy() {
-    this.cons.unsubscribe();
-  }
-
-  ngAfterViewInit() {
     this.mouseMove$ = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
     this.mouseDown$ = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
     this.mouseUp$ = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
@@ -163,14 +187,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       filter(v => v != null), map(v => v!),
       map(v => JSON.parse(v.name).plane as Vector2d));
 
-    this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
-    this.cons.add(msElapsed().pipe(
-      scan<number, ({prev: number, diff: number, curr: number})>(({prev, diff, curr}, newCurr: number) => ({
-        prev: curr,
-        diff: newCurr - curr,
-        curr: newCurr
-      }), { prev: 0, diff: 0, curr: 0 })). subscribe(({prev, diff, curr}) => this.animate(curr, diff)));
-
     // Handle mouse moves
     this.cons.add(this.mouseMoveScene$.pipe(
       this.pointToMesh(this.cellsGeometry))
@@ -192,7 +208,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Handle game events
     this.cons.add(this.atomGame.onNewAtom$.subscribe(atom => {
-      const planeSize = SIZE / DIVISIONS;
 
       const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
       const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
@@ -205,22 +220,24 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       }));
       this.atoms.add(sphere);
     }));
-  }
 
-  animate(time: number, diff: number) {
-    ++this.nFrame;
-    // this.fieldGrid.rotation.x = time / 1000;
-    this.fieldGeometry.rotation.y = Math.sin(time / 5000) / 3;
-    this.fieldGeometry.rotation.x = Math.sin(time / 7000) / 4;
+    return frame$.pipe(
+      map(({time, diff}) => {
+      ++this.nFrame;
+      // this.fieldGrid.rotation.x = time / 1000;
+      this.fieldGeometry.rotation.y = Math.sin(time / 5000) / 3;
+      this.fieldGeometry.rotation.x = Math.sin(time / 7000) / 4;
 
-    this.cellsGeometry.children.forEach(cel => {
-      if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
-        if (cel.name !== this.currHover) {
-          cel.material.opacity *= Math.pow(.998, diff);
+      this.cellsGeometry.children.forEach(cel => {
+        if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
+          if (cel.name !== this.currHover) {
+            cel.material.opacity *= Math.pow(.998, diff);
+          }
         }
-      }
-    });
-    this.onAnimate$.next({time, diff});
-    this.renderer.render(this.scene, this.camera);
+      });
+      this.onAnimate$.next({time, diff});
+      return {scene, camera: this.camera };
+    }));
   }
+
 }

@@ -1,6 +1,6 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, MonoTypeOperatorFunction, OperatorFunction } from 'rxjs';
+import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject } from 'rxjs';
 import { msElapsed } from '../tools';
 import { map, filter, tap, take, scan, distinctUntilChanged } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
@@ -44,6 +44,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   mouseDown$: Observable<MouseEvent>;
   mouseUp$: Observable<MouseEvent>;
   windowSize$ = new BehaviorSubject<Vector2d>({x: 0, y: 0});
+  onAnimate$ = new Subject<void>();
 
   mouseMoveScene$: Observable<Vector2d>;
 
@@ -52,12 +53,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor() {
     this.scene = new THREE.Scene();
     this.onResize();
-
-    const geometry = new THREE.BoxGeometry(200, 200, 200);
-    const material = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: true});
-    // this.mesh = new THREE.Mesh(geometry, material);
-
-    // this.scene.add(this.mesh);
 
     this.buildScene();
   }
@@ -142,7 +137,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.mouseUp$ = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
 
     this.mouseMoveScene$ = combineLatest(
-      this.mouseMove$, this.windowSize$.pipe(filter(v => v.x > 0), tap(console.log)),
+      this.mouseMove$, this.windowSize$.pipe(filter(v => v.x > 0)), this.onAnimate$,
       (event: MouseEvent, wndSize: Vector2d) => ({
       x:   ( event.clientX / wndSize.x ) * 2 - 1,
       y: - ( event.clientY / wndSize.y ) * 2 + 1
@@ -155,10 +150,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
         diff: newCurr - curr,
         curr: newCurr
       }), { prev: 0, diff: 0, curr: 0 })). subscribe(({prev, diff, curr}) => this.animate(curr, diff)));
-    msElapsed().pipe(take(1)).subscribe(_ => this.afterFirstFrame());
-  }
 
-  afterFirstFrame() {
+    // Handle mouse moves
     this.cons.add(this.mouseMoveScene$.pipe(
       this.pointToMesh(this.cellsGeometry))
       .subscribe(v => {
@@ -186,5 +179,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     });
     this.renderer.render(this.scene, this.camera);
+    this.onAnimate$.next();
   }
 }

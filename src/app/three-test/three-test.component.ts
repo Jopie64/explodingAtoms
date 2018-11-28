@@ -2,8 +2,9 @@ import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } fr
 import * as THREE from 'three';
 import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, tap, take, scan, distinctUntilChanged } from 'rxjs/operators';
+import { map, filter, tap, take, scan, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
+import { makeAtomGame } from '../atomGame';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
 
@@ -14,6 +15,16 @@ interface Vector2d {
 
 const SIZE = 10;
 const DIVISIONS = 10;
+
+const toScenePos = (() => {
+  const planeSize = SIZE / DIVISIONS;
+  const bottom = -SIZE / 2;
+  const left = -SIZE / 2;
+  return ({x, y}: Vector2d): Vector2d => ({
+    x: left + (x + .5) * planeSize,
+    y: bottom + (y + .5) * planeSize
+  });
+})();
 
 const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
   if (a === null && b === null) { return true; }
@@ -37,6 +48,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   fieldGeometry: Object3D;
   cellsGeometry: Object3D;
 
+  atoms = new THREE.Group();
+
   nFrame = 0;
   currHover = '';
 
@@ -44,9 +57,11 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   mouseDown$: Observable<MouseEvent>;
   mouseUp$: Observable<MouseEvent>;
   windowSize$ = new BehaviorSubject<Vector2d>({x: 0, y: 0});
-  onAnimate$ = new Subject<void>();
+  onAnimate$ = new Subject<{time: number, diff: number}>();
 
   mouseMoveScene$: Observable<Vector2d>;
+
+  atomGame = makeAtomGame(SIZE, SIZE);
 
   cons = new Subscription();
 
@@ -71,7 +86,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   buildScene() {
-    this.scene.add( new THREE.AmbientLight( 0x404040, 0.6 )); // soft white light
+    this.scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.8 )); // soft white light
     const light = new THREE.DirectionalLight( 0xffffff, 0.35 );
     light.position.set( 1, 1, 1 ).normalize();
     this.scene.add( light );
@@ -84,15 +99,14 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const celGroup = new THREE.Group();
     const planeSize = SIZE / DIVISIONS;
-    const bottom = -SIZE / 2;
-    const left = -SIZE / 2;
     for (let y = 0; y < DIVISIONS; ++y) {
       for (let x = 0; x < DIVISIONS; ++x) {
         const material = new THREE.MeshLambertMaterial( {color: 0x555500} );
         const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.setX(left + (x + .5) * planeSize);
-        mesh.position.setY(bottom + (y + .5) * planeSize);
+        const pos = toScenePos({x, y});
+        mesh.position.setX(pos.x);
+        mesh.position.setY(pos.y);
         mesh.name = JSON.stringify({plane: {x, y}});
         celGroup.add(mesh);
       }
@@ -100,6 +114,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     console.log(celGroup);
     fieldGroup.add(celGroup);
+    fieldGroup.add(this.atoms);
 
     this.cellsGeometry = celGroup;
     this.fieldGeometry = fieldGroup;
@@ -136,12 +151,24 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.mouseDown$ = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
     this.mouseUp$ = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
 
-    this.mouseMoveScene$ = combineLatest(
-      this.mouseMove$, this.windowSize$.pipe(filter(v => v.x > 0)), this.onAnimate$,
-      (event: MouseEvent, wndSize: Vector2d) => ({
+    const mouseToScenePos = (event: MouseEvent, wndSize: Vector2d) => ({
       x:   ( event.clientX / wndSize.x ) * 2 - 1,
       y: - ( event.clientY / wndSize.y ) * 2 + 1
-    }));
+    });
+    this.mouseMoveScene$ = combineLatest(
+      this.mouseMove$, this.windowSize$.pipe(filter(v => v.x > 0)), this.onAnimate$,
+      mouseToScenePos
+    );
+
+    const onCelClicked$ = this.mouseDown$.pipe(
+      switchMap(mouseEvent => this.windowSize$.pipe(
+        map(wndSize => mouseToScenePos(mouseEvent, wndSize)),
+        this.pointToMesh(this.cellsGeometry),
+        take(1))
+      ),
+      // tslint:disable-next-line:no-non-null-assertion
+      filter(v => v != null), map(v => v!),
+      map(v => JSON.parse(v.name).plane as Vector2d));
 
     this.rendererContainer.nativeElement.appendChild(this.renderer.domElement);
     this.cons.add(msElapsed().pipe(
@@ -163,9 +190,32 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
           this.currHover = '';
         }
       }));
+
+    // Handle mouse clicks
+    this.cons.add(onCelClicked$.subscribe(v => {
+      console.log('clicked', v);
+      this.atomGame.addAtom(v);
+    }));
+
+    // Handle game events
+    this.cons.add(this.atomGame.onNewAtom$.subscribe(atom => {
+      const planeSize = SIZE / DIVISIONS;
+
+      const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
+      const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
+      const sphere = new THREE.Mesh( geometry, material );
+
+      this.cons.add(atom.pos$.subscribe(pos => {
+        const sPos = toScenePos(pos);
+        sphere.position.setX(sPos.x);
+        sphere.position.setY(sPos.y);
+      }));
+      // this.scene.add( sphere );
+      this.atoms.add(sphere);
+    }));
   }
 
-  animate(time: number, diffWithPrev: number) {
+  animate(time: number, diff: number) {
     ++this.nFrame;
     // this.fieldGrid.rotation.x = time / 1000;
     this.fieldGeometry.rotation.y = Math.sin(time / 5000) / 3;
@@ -174,11 +224,11 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cellsGeometry.children.forEach(cel => {
       if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
         if (cel.name !== this.currHover) {
-          cel.material.color.g *= Math.pow(.998, diffWithPrev);
+          cel.material.color.g *= Math.pow(.998, diff);
         }
       }
     });
+    this.onAnimate$.next({time, diff});
     this.renderer.render(this.scene, this.camera);
-    this.onAnimate$.next();
   }
 }

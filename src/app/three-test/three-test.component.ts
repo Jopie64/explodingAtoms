@@ -57,10 +57,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   rayCaster = new THREE.Raycaster();
   camera: THREE.Camera;
-  fieldGeometry: Object3D;
-  cellsGeometry: Object3D;
-
-  atoms = new THREE.Group();
 
   nFrame = 0;
   currHover = '';
@@ -129,8 +125,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
   buildScene$(): Observable<SceneState> {
     const scene = new THREE.Scene();
-    scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.8 )); // soft white light
-    const light = new THREE.DirectionalLight( 0xffffff, 0.35 );
+    scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.35 )); // soft white light
+    const light = new THREE.DirectionalLight( 0xffffff, 0.8 );
     light.position.set( 1, 1, 1 ).normalize();
     scene.add( light );
 
@@ -140,7 +136,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     fieldGroup.add(grid);
 
-    const celGroup = new THREE.Group();
+    const cellGroup = new THREE.Group();
     const planeSize = SIZE / DIVISIONS;
     for (let y = 0; y < DIVISIONS; ++y) {
       for (let x = 0; x < DIVISIONS; ++x) {
@@ -151,16 +147,11 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
         mesh.position.setX(pos.x);
         mesh.position.setY(pos.y);
         mesh.name = JSON.stringify({plane: {x, y}});
-        celGroup.add(mesh);
+        cellGroup.add(mesh);
       }
     }
 
-    console.log(celGroup);
-    fieldGroup.add(celGroup);
-    fieldGroup.add(this.atoms);
-
-    this.cellsGeometry = celGroup;
-    this.fieldGeometry = fieldGroup;
+    fieldGroup.add(cellGroup);
 
     scene.add(fieldGroup);
 
@@ -180,7 +171,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     const onCelClicked$ = this.mouseDown$.pipe(
       switchMap(mouseEvent => this.windowSize$.pipe(
         map(wndSize => mouseToScenePos(mouseEvent, wndSize)),
-        this.pointToMesh(this.cellsGeometry),
+        this.pointToMesh(cellGroup),
         take(1))
       ),
       // tslint:disable-next-line:no-non-null-assertion
@@ -189,7 +180,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Handle mouse moves
     this.cons.add(this.mouseMoveScene$.pipe(
-      this.pointToMesh(this.cellsGeometry))
+      this.pointToMesh(cellGroup))
       .subscribe(v => {
         if (v && v.material instanceof MeshLambertMaterial) {
           console.log('Object content: ', v.name);
@@ -207,6 +198,8 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
     }));
 
     // Handle game events
+    const atomsGroup = new THREE.Group();
+    fieldGroup.add(atomsGroup);
     this.cons.add(this.atomGame.onNewAtom$.subscribe(atom => {
 
       const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
@@ -218,17 +211,16 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
         sphere.position.setX(sPos.x);
         sphere.position.setY(sPos.y);
       }));
-      this.atoms.add(sphere);
+      atomsGroup.add(sphere);
     }));
 
     return frame$.pipe(
       map(({time, diff}) => {
       ++this.nFrame;
-      // this.fieldGrid.rotation.x = time / 1000;
-      this.fieldGeometry.rotation.y = Math.sin(time / 5000) / 3;
-      this.fieldGeometry.rotation.x = Math.sin(time / 7000) / 4;
+      fieldGroup.rotation.y = Math.sin(time / 5000) / 3;
+      fieldGroup.rotation.x = Math.sin(time / 7000) / 4;
 
-      this.cellsGeometry.children.forEach(cel => {
+      cellGroup.children.forEach(cel => {
         if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
           if (cel.name !== this.currHover) {
             cel.material.opacity *= Math.pow(.998, diff);

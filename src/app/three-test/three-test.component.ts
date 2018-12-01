@@ -1,6 +1,6 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject, of, defer } from 'rxjs';
+import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject, of, defer, merge } from 'rxjs';
 import { msElapsed } from '../tools';
 import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
@@ -97,8 +97,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
 
   buildScene$(): Observable<SceneState> {
-    const atomGame = makeAtomGame(SIZE, SIZE);
-
     const mouseMove$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
     const mouseDown$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
     const mouseUp$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
@@ -133,15 +131,13 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
     interface InternalSceneState {
       scene: THREE.Scene;
-      currHover: string;
-      fieldGroup: THREE.Group;
-      cellGroup: THREE.Group;
       action$: Observable<InternalSceneAction>;
     }
 
-    type InternalSceneAction = (scene: InternalSceneState) => void;
+    type InternalSceneAction = () => void;
 
     const initialScene$ = defer(async (): Promise<InternalSceneState> => {
+      const atomGame = makeAtomGame(SIZE, SIZE);
       const scene = new THREE.Scene();
       scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.35 )); // soft white light
       const light = new THREE.DirectionalLight( 0xffffff, 0.8 );
@@ -183,67 +179,75 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
         filter(v => v != null), map(v => v!),
         map(v => JSON.parse(v.name).plane as Vector2d));
 
-      const currHoverAction$ = mouseMoveScene$.pipe(
+      const currHover$ = mouseMoveScene$.pipe(
         pointToMesh(cellGroup),
-        map(v => v ? v.name : ''),
-        map(hover => (intScene: InternalSceneState) => intScene.currHover = hover));
+        map(v => v ? v.name : ''));
 
       // Handle mouse clicks
-      this.cons.add(onCelClicked$.subscribe(v => {
-        console.log('clicked', v);
-        atomGame.addAtom(v);
-      }));
+      const addAtomToGameAction$ = onCelClicked$.pipe(
+        map(v => () => {
+          console.log('clicked', v);
+          atomGame.addAtom(v);
+        }));
 
       // Handle game events
       const atomsGroup = new THREE.Group();
       fieldGroup.add(atomsGroup);
-      this.cons.add(atomGame.onNewAtom$.subscribe(atom => {
 
-        const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
-        const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
-        const sphere = new THREE.Mesh( geometry, material );
+      const addAtomToScreenAction$ = atomGame.onNewAtom$.pipe(
+        map(atom => () => {
+          const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
+          const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
+          const sphere = new THREE.Mesh( geometry, material );
 
-        this.cons.add(atom.pos$.subscribe(pos => {
-          const sPos = toScenePos(pos);
-          sphere.position.setX(sPos.x);
-          sphere.position.setY(sPos.y);
-        }));
-        atomsGroup.add(sphere);
+          this.cons.add(atom.pos$.subscribe(pos => {
+            const sPos = toScenePos(pos);
+            sphere.position.setX(sPos.x);
+            sphere.position.setY(sPos.y);
+          }));
+          atomsGroup.add(sphere);
       }));
+
+      const rotateFieldAction$ = frame$.pipe(
+        map(({time}) => () => {
+          ++this.nFrame;
+          fieldGroup.rotation.y = Math.sin(time / 5000) / 3;
+          fieldGroup.rotation.x = Math.sin(time / 7000) / 4;
+        }));
+
+      // highlight hovered items
+      const highlightHoverAction$ = combineLatest(currHover$, frame$).pipe(
+        map(([currHover, {diff}]) => () =>
+          cellGroup.children.forEach(cel => {
+            if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
+              if (cel.name !== currHover) {
+                cel.material.opacity *= Math.pow(.998, diff);
+              } else {
+                cel.material.opacity = 1;
+              }
+            }
+          })
+        ));
+
       return {
         scene,
-        currHover: '',
-        fieldGroup,
-        cellGroup,
-        action$: currHoverAction$
+        action$: merge(
+          addAtomToGameAction$,
+          addAtomToScreenAction$,
+          rotateFieldAction$,
+          highlightHoverAction$
+        )
       };
     });
 
     const scene$ = initialScene$.pipe(
       switchMap(initialScene => initialScene.action$.pipe(
         scan((scene: InternalSceneState, action: InternalSceneAction) => {
-          action(scene);
+          action();
           return scene;
         }, initialScene)
       )));
 
-    return combineLatest(scene$, frame$).pipe(
-      map(([{scene, cellGroup, fieldGroup, currHover}, {time, diff}]) => {
-      ++this.nFrame;
-      fieldGroup.rotation.y = Math.sin(time / 5000) / 3;
-      fieldGroup.rotation.x = Math.sin(time / 7000) / 4;
-
-      cellGroup.children.forEach(cel => {
-        if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
-          if (cel.name !== currHover) {
-            cel.material.opacity *= Math.pow(.998, diff);
-          } else {
-            cel.material.opacity = 1;
-          }
-        }
-      });
-      return {scene, camera: this.camera };
-    }));
+    return scene$.pipe(map(({scene}) => ({scene, camera: this.camera })));
   }
-
 }

@@ -5,9 +5,15 @@ export interface AtomPos {
     y: number;
 }
 
+export interface AtomIx {
+    ix: number;
+}
+
+export type AtomState = AtomPos & AtomIx;
+
 export interface Atom {
     player: number;
-    pos$: Observable<AtomPos>;
+    pos$: Observable<AtomState>;
 }
 
 export interface AtomGame {
@@ -37,11 +43,11 @@ export const makeAtomGame = (sx: number, sy: number): AtomGame => {
     }
 
     const addAtom = (pos: AtomPos): Atom => {
+        const cel = field[toIx(pos)];
         const newAtom = {
             player,
-            pos$: new BehaviorSubject<AtomPos>(pos)
+            pos$: new BehaviorSubject<AtomState>({ ...pos, ix: cel.length })
         };
-        const cel = field[toIx(pos)];
         cel.push(newAtom);
         onNewAtom$.next(newAtom);
         ++player;

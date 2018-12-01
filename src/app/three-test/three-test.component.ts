@@ -4,7 +4,7 @@ import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, Op
 import { msElapsed } from '../tools';
 import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo, flatMap } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
-import { makeAtomGame } from '../atomGame';
+import { makeAtomGame, AtomState } from '../atomGame';
 
 // Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
 
@@ -134,6 +134,19 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       action$: Observable<InternalSceneAction>;
     }
 
+    const planeSize = SIZE / DIVISIONS;
+    const atomStateToPos = (a: AtomState) => {
+      const offset = planeSize / 4;
+      const sp = toScenePos(a);
+      switch (a.ix) {
+        case 0: return { x: sp.x - offset, y: sp.y };
+        case 1: return { x: sp.x, y: sp.y + offset };
+        case 2: return { x: sp.x + offset, y: sp.y };
+        case 3: return { x: sp.x, y: sp.y - offset };
+        default: return { x: sp.x + (1 - 2 * Math.random()) * offset, y: sp.y + (1 - 2 * Math.random()) * offset };
+      }
+    };
+
     type InternalSceneAction = () => void;
 
     const initialScene$ = defer(async (): Promise<InternalSceneState> => {
@@ -151,7 +164,6 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       fieldGroup.add(grid);
 
       const cellGroup = new THREE.Group();
-      const planeSize = SIZE / DIVISIONS;
       for (let y = 0; y < DIVISIONS; ++y) {
         for (let x = 0; x < DIVISIONS; ++x) {
           const material = new THREE.MeshLambertMaterial( {color: 0x00ff00, transparent: true, opacity: 1} );
@@ -202,10 +214,10 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
           atomsGroup.add(sphere);
 
           return atom.pos$.pipe(
-            map(pos => () => {
-            const sPos = toScenePos(pos);
-            sphere.position.setX(sPos.x);
-            sphere.position.setY(sPos.y);
+            map(atomState => () => {
+              const sPos = atomStateToPos(atomState);
+              sphere.position.setX(sPos.x);
+              sphere.position.setY(sPos.y);
           }));
       }));
 

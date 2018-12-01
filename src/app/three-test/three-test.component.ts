@@ -2,7 +2,7 @@ import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } fr
 import * as THREE from 'three';
 import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject, of, defer, merge } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo } from 'rxjs/operators';
+import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo, flatMap } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 import { makeAtomGame } from '../atomGame';
 
@@ -195,17 +195,18 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       fieldGroup.add(atomsGroup);
 
       const addAtomToScreenAction$ = atomGame.onNewAtom$.pipe(
-        map(atom => () => {
+        flatMap(atom => {
           const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
           const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
           const sphere = new THREE.Mesh( geometry, material );
+          atomsGroup.add(sphere);
 
-          this.cons.add(atom.pos$.subscribe(pos => {
+          return atom.pos$.pipe(
+            map(pos => () => {
             const sPos = toScenePos(pos);
             sphere.position.setX(sPos.x);
             sphere.position.setY(sPos.y);
           }));
-          atomsGroup.add(sphere);
       }));
 
       const rotateFieldAction$ = frame$.pipe(

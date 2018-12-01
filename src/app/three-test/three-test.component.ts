@@ -131,76 +131,104 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       mouseToScenePos
     );
 
-    const scene = new THREE.Scene();
-    scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.35 )); // soft white light
-    const light = new THREE.DirectionalLight( 0xffffff, 0.8 );
-    light.position.set( 1, 1, 1 ).normalize();
-    scene.add( light );
-
-    const fieldGroup = new THREE.Group();
-    const grid = new THREE.GridHelper( SIZE, DIVISIONS, 0xffffff, 0xffff00 );
-    grid.rotation.x = Math.PI / 2;
-
-    fieldGroup.add(grid);
-
-    const cellGroup = new THREE.Group();
-    const planeSize = SIZE / DIVISIONS;
-    for (let y = 0; y < DIVISIONS; ++y) {
-      for (let x = 0; x < DIVISIONS; ++x) {
-        const material = new THREE.MeshLambertMaterial( {color: 0x00ff00, transparent: true, opacity: 1} );
-        const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
-        const mesh = new THREE.Mesh(geometry, material);
-        const pos = toScenePos({x, y});
-        mesh.position.setX(pos.x);
-        mesh.position.setY(pos.y);
-        mesh.name = JSON.stringify({plane: {x, y}});
-        cellGroup.add(mesh);
-      }
+    interface InternalSceneState {
+      scene: THREE.Scene;
+      currHover: string;
+      fieldGroup: THREE.Group;
+      cellGroup: THREE.Group;
+      action$: Observable<InternalSceneAction>;
     }
 
-    fieldGroup.add(cellGroup);
+    type InternalSceneAction = (scene: InternalSceneState) => void;
 
-    scene.add(fieldGroup);
+    const initialScene$ = defer(async (): Promise<InternalSceneState> => {
+      const scene = new THREE.Scene();
+      scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.35 )); // soft white light
+      const light = new THREE.DirectionalLight( 0xffffff, 0.8 );
+      light.position.set( 1, 1, 1 ).normalize();
+      scene.add( light );
 
-    const onCelClicked$ = mouseDown$.pipe(
-      switchMap(mouseEvent => this.windowSize$.pipe(
-        map(wndSize => mouseToScenePos(mouseEvent, wndSize)),
+      const fieldGroup = new THREE.Group();
+      const grid = new THREE.GridHelper( SIZE, DIVISIONS, 0xffffff, 0xffff00 );
+      grid.rotation.x = Math.PI / 2;
+
+      fieldGroup.add(grid);
+
+      const cellGroup = new THREE.Group();
+      const planeSize = SIZE / DIVISIONS;
+      for (let y = 0; y < DIVISIONS; ++y) {
+        for (let x = 0; x < DIVISIONS; ++x) {
+          const material = new THREE.MeshLambertMaterial( {color: 0x00ff00, transparent: true, opacity: 1} );
+          const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
+          const mesh = new THREE.Mesh(geometry, material);
+          const pos = toScenePos({x, y});
+          mesh.position.setX(pos.x);
+          mesh.position.setY(pos.y);
+          mesh.name = JSON.stringify({plane: {x, y}});
+          cellGroup.add(mesh);
+        }
+      }
+
+      fieldGroup.add(cellGroup);
+
+      scene.add(fieldGroup);
+
+      const onCelClicked$ = mouseDown$.pipe(
+        switchMap(mouseEvent => this.windowSize$.pipe(
+          map(wndSize => mouseToScenePos(mouseEvent, wndSize)),
+          pointToMesh(cellGroup),
+          take(1))
+        ),
+        // tslint:disable-next-line:no-non-null-assertion
+        filter(v => v != null), map(v => v!),
+        map(v => JSON.parse(v.name).plane as Vector2d));
+
+      const currHoverAction$ = mouseMoveScene$.pipe(
         pointToMesh(cellGroup),
-        take(1))
-      ),
-      // tslint:disable-next-line:no-non-null-assertion
-      filter(v => v != null), map(v => v!),
-      map(v => JSON.parse(v.name).plane as Vector2d));
+        map(v => v ? v.name : ''),
+        map(hover => (intScene: InternalSceneState) => intScene.currHover = hover));
 
-    const currHover$ = mouseMoveScene$.pipe(
-      pointToMesh(cellGroup),
-      map(v => v ? v.name : ''));
-
-    // Handle mouse clicks
-    this.cons.add(onCelClicked$.subscribe(v => {
-      console.log('clicked', v);
-      atomGame.addAtom(v);
-    }));
-
-    // Handle game events
-    const atomsGroup = new THREE.Group();
-    fieldGroup.add(atomsGroup);
-    this.cons.add(atomGame.onNewAtom$.subscribe(atom => {
-
-      const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
-      const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
-      const sphere = new THREE.Mesh( geometry, material );
-
-      this.cons.add(atom.pos$.subscribe(pos => {
-        const sPos = toScenePos(pos);
-        sphere.position.setX(sPos.x);
-        sphere.position.setY(sPos.y);
+      // Handle mouse clicks
+      this.cons.add(onCelClicked$.subscribe(v => {
+        console.log('clicked', v);
+        atomGame.addAtom(v);
       }));
-      atomsGroup.add(sphere);
-    }));
 
-    return combineLatest(currHover$, frame$).pipe(
-      map(([currHover, {time, diff}]) => {
+      // Handle game events
+      const atomsGroup = new THREE.Group();
+      fieldGroup.add(atomsGroup);
+      this.cons.add(atomGame.onNewAtom$.subscribe(atom => {
+
+        const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
+        const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
+        const sphere = new THREE.Mesh( geometry, material );
+
+        this.cons.add(atom.pos$.subscribe(pos => {
+          const sPos = toScenePos(pos);
+          sphere.position.setX(sPos.x);
+          sphere.position.setY(sPos.y);
+        }));
+        atomsGroup.add(sphere);
+      }));
+      return {
+        scene,
+        currHover: '',
+        fieldGroup,
+        cellGroup,
+        action$: currHoverAction$
+      };
+    });
+
+    const scene$ = initialScene$.pipe(
+      switchMap(initialScene => initialScene.action$.pipe(
+        scan((scene: InternalSceneState, action: InternalSceneAction) => {
+          action(scene);
+          return scene;
+        }, initialScene)
+      )));
+
+    return combineLatest(scene$, frame$).pipe(
+      map(([{scene, cellGroup, fieldGroup, currHover}, {time, diff}]) => {
       ++this.nFrame;
       fieldGroup.rotation.y = Math.sin(time / 5000) / 3;
       fieldGroup.rotation.x = Math.sin(time / 7000) / 4;

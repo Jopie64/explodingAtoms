@@ -134,9 +134,10 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       action$: Observable<InternalSceneAction>;
     }
 
-    const planeSize = SIZE / DIVISIONS;
+    const cellSize = SIZE / DIVISIONS;
+
     const atomStateToPos = (a: AtomState) => {
-      const offset = planeSize / 4;
+      const offset = cellSize / 4;
       const sp = toScenePos(a);
       switch (a.ix) {
         case 0: return { x: sp.x - offset, y: sp.y };
@@ -167,7 +168,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       for (let y = 0; y < DIVISIONS; ++y) {
         for (let x = 0; x < DIVISIONS; ++x) {
           const material = new THREE.MeshLambertMaterial( {color: 0x00ff00, transparent: true, opacity: 1} );
-          const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
+          const geometry = new THREE.PlaneGeometry(cellSize, cellSize);
           const mesh = new THREE.Mesh(geometry, material);
           const pos = toScenePos({x, y});
           mesh.position.setX(pos.x);
@@ -197,6 +198,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Handle mouse clicks
       const addAtomToGameAction$ = onCelClicked$.pipe(
+        filter(v => atomGame.canAddAtom(v)),
         map(v => () => {
           console.log('clicked', v);
           atomGame.addAtom(v);
@@ -208,7 +210,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const addAtomToScreenAction$ = atomGame.onNewAtom$.pipe(
         flatMap(atom => {
-          const geometry = new THREE.SphereGeometry(planeSize / 4, 32, 32);
+          const geometry = new THREE.SphereGeometry(cellSize / 4, 32, 32);
           const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
           const sphere = new THREE.Mesh( geometry, material );
           atomsGroup.add(sphere);

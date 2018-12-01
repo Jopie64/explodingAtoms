@@ -19,6 +19,7 @@ export interface Atom {
 export interface AtomGame {
     onNewAtom$: Observable<Atom>;
     addAtom(pos: AtomPos): Atom;
+    canAddAtom(pos: AtomPos): boolean;
 }
 
 interface InternalAtom {
@@ -55,8 +56,17 @@ export const makeAtomGame = (sx: number, sy: number): AtomGame => {
         return newAtom;
     };
 
+    const canAddAtom = (pos: AtomPos) => {
+        const cell = field[toIx(pos)];
+        if (cell.length === 0) {
+            return true;
+        }
+        return cell[0].player === player;
+    };
+
     return {
         onNewAtom$,
-        addAtom
+        addAtom,
+        canAddAtom
     };
 };

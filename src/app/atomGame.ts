@@ -72,13 +72,12 @@ export const makeAtomGame = (sx: number, sy: number): AtomGame => {
 
     const canAddAtom = (pos: AtomPos) => {
         const cell = field[toIx(pos)];
-        if (cell.length === 0) {
-            return true;
-        }
-        return cell[0].player === player;
+        return (cell.length === 0
+            || cell[0].player === player)
+            && getExplosiveCells().length === 0;
     };
 
-    const explode = () => {
+    const getExplosiveCells = () => {
         const explodeCells: AtomPos[] = [];
         for (let y = 0; y < sy; ++y) {
             for (let x = 0; x < sx; ++x) {
@@ -90,14 +89,15 @@ export const makeAtomGame = (sx: number, sy: number): AtomGame => {
                 }
             }
         }
-
-        explodeCells.forEach(({x, y}) => {
-            if (x < sx - 1) { moveAtom({x, y}, {x: x + 1, y}); }
-            if (y < sy - 1) { moveAtom({x, y}, {x: x, y: y + 1 }); }
-            if (x > 0)      { moveAtom({x, y}, {x: x - 1, y}); }
-            if (y > 0)      { moveAtom({x, y}, {x: x, y: y - 1}); }
-        });
+        return explodeCells;
     };
+
+    const explode = () => getExplosiveCells().forEach(({x, y}) => {
+        if (x < sx - 1) { moveAtom({x, y}, {x: x + 1, y}); }
+        if (y < sy - 1) { moveAtom({x, y}, {x: x, y: y + 1 }); }
+        if (x > 0)      { moveAtom({x, y}, {x: x - 1, y}); }
+        if (y > 0)      { moveAtom({x, y}, {x: x, y: y - 1}); }
+    });
 
     return {
         onNewAtom$,

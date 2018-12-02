@@ -1,6 +1,7 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, OperatorFunction, Subject, of, defer, merge } from 'rxjs';
+import { Subscription, fromEvent, Observable, BehaviorSubject,
+  combineLatest, OperatorFunction, of, defer, merge, timer } from 'rxjs';
 import { msElapsed } from '../tools';
 import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo, flatMap } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
@@ -199,10 +200,7 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       // Handle mouse clicks
       const addAtomToGameAction$ = onCelClicked$.pipe(
         filter(v => atomGame.canAddAtom(v)),
-        map(v => () => {
-          console.log('clicked', v);
-          atomGame.addAtom(v);
-        }));
+        map(v => () => atomGame.addAtom(v)));
 
       // Handle game events
       const atomsGroup = new THREE.Group();
@@ -211,13 +209,14 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
       const addAtomToScreenAction$ = atomGame.onNewAtom$.pipe(
         flatMap(atom => {
           const geometry = new THREE.SphereGeometry(cellSize / 4, 32, 32);
-          const material = new THREE.MeshLambertMaterial( {color: atom.player === 0 ? 0xff0000 : 0x0000ff} );
+          const material = new THREE.MeshLambertMaterial( { color: 0xffffff } );
           const sphere = new THREE.Mesh( geometry, material );
           atomsGroup.add(sphere);
 
-          return atom.pos$.pipe(
+          return atom.state$.pipe(
             map(atomState => () => {
               const sPos = atomStateToPos(atomState);
+              material.color.setRGB(atomState.player === 0 ? 1 : 0, 0, atomState.player === 1 ? 1 : 0);
               sphere.position.setX(sPos.x);
               sphere.position.setY(sPos.y);
           }));
@@ -244,9 +243,13 @@ export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
           })
         ));
 
+      const explodeAction$ = timer(1000, 1000).pipe(
+        map(_ => () => atomGame.explode()));
+
       return {
         scene,
         action$: merge(
+          explodeAction$,
           addAtomToGameAction$,
           addAtomToScreenAction$,
           rotateFieldAction$,

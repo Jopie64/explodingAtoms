@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Observable, combineLatest, OperatorFunction, defer, merge, timer } from 'rxjs';
 import { msElapsed } from '../tools';
 import { map, filter, take, scan, distinctUntilChanged,
-  switchMap, refCount, publish, flatMap, publishReplay } from 'rxjs/operators';
+  switchMap, refCount, publish, flatMap, publishReplay, takeUntil, takeWhile } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 import { makeAtomGame, AtomState, Atom } from '../atomGame';
 
@@ -129,12 +129,18 @@ export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, div
             action$: atom.state$.pipe(
                 switchMap(atomState => {
                     const sPos = atomStateToPos(atomState);
+                    let counter = 10;
                     return frame$.pipe(
-                        map(({diff}) => () => {
+                        map(({diff}) => {
                             const vdiff = vectorDiff(pos, sPos);
                             speed = vectorAdd(speed, vectorMult(vdiff, vectorDistance(vdiff) * diff / 1000));
                             speed = vectorMult(speed, 0.9);
                             pos = vectorAdd(pos, speed);
+                            --counter;
+                            return vdiff;
+                        }),
+                        takeWhile( vdiff => vectorDistance(vdiff) > 0.05 || vectorDistance(speed) > 0.1 || counter > 0),
+                        map(() => () => {
                             material.color.setRGB(atomState.player === 0 ? 1 : 0, 0, atomState.player === 1 ? 1 : 0);
                             mesh.position.setX(pos.x);
                             mesh.position.setY(pos.y);

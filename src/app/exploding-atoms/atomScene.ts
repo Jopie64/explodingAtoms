@@ -46,6 +46,15 @@ const frame$ = msElapsed().pipe(
     map(({diff, curr}) => ({ diff, time: curr })),
     publish(), refCount());
 
+const vectorAdd = (a: Vector2d, b: Vector2d): Vector2d => ({ x: b.x + a.x, y: b.y + a.y });
+const vectorMult = (a: Vector2d, mult: number): Vector2d => ({ x: a.x * mult, y: a.y * mult });
+const vectorDiff = (a: Vector2d, b: Vector2d): Vector2d => ({ x: b.x - a.x, y: b.y - a.y });
+const vectorDistance2 = (diff: Vector2d) => {
+    return diff.x * diff.x + diff.y * diff.y;
+};
+const vectorDistance = (diff: Vector2d) => Math.sqrt(vectorDistance2(diff));
+
+
 export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, divisions }: AtomSceneInput): Observable<SceneState> => {
 
     const toScenePos = (() => {
@@ -112,15 +121,26 @@ export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, div
         const material = new THREE.MeshLambertMaterial( { color: 0xffffff } );
         const mesh = new THREE.Mesh( geometry, material );
 
+        let pos: Vector2d = { x: 0, y: 0 };
+        let speed: Vector2d = { x: 0, y: 0 };
+
         return {
             mesh,
             action$: atom.state$.pipe(
-                map(atomState => () => {
-                const sPos = atomStateToPos(atomState);
-                material.color.setRGB(atomState.player === 0 ? 1 : 0, 0, atomState.player === 1 ? 1 : 0);
-                mesh.position.setX(sPos.x);
-                mesh.position.setY(sPos.y);
-        }))};
+                switchMap(atomState => {
+                    const sPos = atomStateToPos(atomState);
+                    return frame$.pipe(
+                        map(({diff}) => () => {
+                            const vdiff = vectorDiff(pos, sPos);
+                            speed = vectorAdd(speed, vectorMult(vdiff, vectorDistance(vdiff) * diff / 1000));
+                            speed = vectorMult(speed, 0.9);
+                            pos = vectorAdd(pos, speed);
+                            material.color.setRGB(atomState.player === 0 ? 1 : 0, 0, atomState.player === 1 ? 1 : 0);
+                            mesh.position.setX(pos.x);
+                            mesh.position.setY(pos.y);
+                        }));
+                }))
+        };
     };
 
     const initialScene$ = defer(async (): Promise<InternalSceneState> => {

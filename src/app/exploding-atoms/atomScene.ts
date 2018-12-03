@@ -4,7 +4,7 @@ import { msElapsed } from '../tools';
 import { map, filter, take, scan, distinctUntilChanged,
   switchMap, refCount, publish, flatMap, publishReplay } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
-import { makeAtomGame, AtomState } from '../atomGame';
+import { makeAtomGame, AtomState, Atom } from '../atomGame';
 
 export interface Vector2d {
     x: number;
@@ -24,6 +24,12 @@ export interface SceneState {
     camera: THREE.Camera;
 }
 
+type InternalSceneAction = () => void;
+
+interface MeshWithBehavior {
+    mesh: THREE.Mesh;
+    action$: Observable<InternalSceneAction>;
+}
 
 const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
   if (a === null && b === null) { return true; }
@@ -39,8 +45,6 @@ const frame$ = msElapsed().pipe(
     }), { prev: 0, diff: 0, curr: 0 }),
     map(({diff, curr}) => ({ diff, time: curr })),
     publish(), refCount());
-
-
 
 export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, divisions }: AtomSceneInput): Observable<SceneState> => {
 
@@ -103,7 +107,21 @@ export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, div
       }
     };
 
-    type InternalSceneAction = () => void;
+    const makeAtomBehavior = (atom: Atom): MeshWithBehavior => {
+        const geometry = new THREE.SphereGeometry(cellSize / 4, 32, 32);
+        const material = new THREE.MeshLambertMaterial( { color: 0xffffff } );
+        const mesh = new THREE.Mesh( geometry, material );
+
+        return {
+            mesh,
+            action$: atom.state$.pipe(
+                map(atomState => () => {
+                const sPos = atomStateToPos(atomState);
+                material.color.setRGB(atomState.player === 0 ? 1 : 0, 0, atomState.player === 1 ? 1 : 0);
+                mesh.position.setX(sPos.x);
+                mesh.position.setY(sPos.y);
+        }))};
+    };
 
     const initialScene$ = defer(async (): Promise<InternalSceneState> => {
       const atomGame = makeAtomGame(size, size);
@@ -162,19 +180,10 @@ export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, div
 
       const atomActions$ = atomGame.onNewAtom$.pipe(
         flatMap(atom => {
-          const geometry = new THREE.SphereGeometry(cellSize / 4, 32, 32);
-          const material = new THREE.MeshLambertMaterial( { color: 0xffffff } );
-          const sphere = new THREE.Mesh( geometry, material );
-          atomsGroup.add(sphere);
-
-          return atom.state$.pipe(
-            map(atomState => () => {
-              const sPos = atomStateToPos(atomState);
-              material.color.setRGB(atomState.player === 0 ? 1 : 0, 0, atomState.player === 1 ? 1 : 0);
-              sphere.position.setX(sPos.x);
-              sphere.position.setY(sPos.y);
-          }));
-      }));
+            const { mesh, action$ } = makeAtomBehavior(atom);
+            atomsGroup.add(mesh);
+            return action$;
+        }));
 
       const rotateFieldAction$ = frame$.pipe(
         map(({time}) => () => {

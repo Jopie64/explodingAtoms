@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { Subscription, fromEvent, Observable, BehaviorSubject,
   combineLatest, OperatorFunction, of, defer, merge, timer } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, tap, take, scan, distinctUntilChanged, switchMap, refCount, publish, mapTo, flatMap } from 'rxjs/operators';
+import { map, filter, tap, take, scan, distinctUntilChanged,
+  switchMap, refCount, publish, mapTo, flatMap, publishReplay } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 import { makeAtomGame, AtomState } from '../atomGame';
 
@@ -38,6 +39,12 @@ const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
   return a.name === b.name;
 };
 
+interface AtomSceneInput {
+  windowSize$: Observable<Vector2d>;
+  mouseMove$: Observable<MouseEvent>;
+  mouseDown$: Observable<MouseEvent>;
+}
+
 @Component({
   selector: 'app-exploding-atoms',
   templateUrl: './exploding-atoms.component.html',
@@ -47,13 +54,9 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
 
   @ViewChild('rendererContainer') rendererContainer: ElementRef;
 
-  camera: THREE.Camera;
-
   nFrame = 0;
 
   windowSize$ = new BehaviorSubject<Vector2d>({x: 0, y: 0});
-
-  mouseMoveScene$: Observable<Vector2d>;
 
   cons = new Subscription();
 
@@ -62,8 +65,15 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
 
   }
 
-
   ngAfterViewInit() {
+    const mouseMove$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
+    const mouseDown$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
+    const atomSceneInput: AtomSceneInput = {
+      windowSize$: this.windowSize$,
+      mouseMove$,
+      mouseDown$
+    };
+
     const renderer$ = of(new THREE.WebGLRenderer({ antialias: true })).pipe(
       tap(renderer => this.rendererContainer.nativeElement.appendChild(renderer.domElement)),
       switchMap(renderer => this.windowSize$.pipe(
@@ -71,7 +81,7 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
         mapTo(renderer)
       ))
     );
-    this.cons.add(combineLatest(renderer$, this.buildScene$()).subscribe(([renderer, v]) => {
+    this.cons.add(combineLatest(renderer$, this.buildScene$(atomSceneInput)).subscribe(([renderer, v]) => {
       renderer.render(v.scene, v.camera);
     }));
   }
@@ -88,19 +98,10 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
     const width = window.innerWidth;
     const height = window.innerHeight - 4;
     console.log(`Resizing... (${width}x${height})`);
-    const camera = new THREE.PerspectiveCamera(75, width / height, 1, 10000);
-    camera.position.z = 10;
-    camera.updateProjectionMatrix();
-    this.camera = camera;
-
     this.windowSize$.next({x: width, y: height});
   }
 
-
-  buildScene$(): Observable<SceneState> {
-    const mouseMove$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
-    const mouseDown$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
-    const mouseUp$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mouseup');
+  buildScene$({ mouseMove$, mouseDown$, windowSize$ }: AtomSceneInput): Observable<SceneState> {
 
     const frame$ = msElapsed().pipe(
       scan<number, ({prev: number, diff: number, curr: number})>(({prev, diff, curr}, newCurr: number) => ({
@@ -111,10 +112,20 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
       map(({diff, curr}) => ({ diff, time: curr })),
       publish(), refCount());
 
+    const camera$ = windowSize$.pipe(
+      map(({x, y}) => {
+        const camera = new THREE.PerspectiveCamera(75, x / y, 1, 10000);
+        camera.position.z = 10;
+        camera.updateProjectionMatrix();
+        return camera;
+      }),
+      publishReplay(1), refCount());
+
     const rayCaster = new THREE.Raycaster();
-    const pointToMesh = (group: Object3D): OperatorFunction<Vector2d, Mesh | null> => in$ => in$.pipe(
-        map(v => {
-          rayCaster.setFromCamera(v, this.camera);
+    const pointToMesh = (group: Object3D): OperatorFunction<Vector2d, Mesh | null> => point$ =>
+      combineLatest(point$, camera$).pipe(
+        map(([point, camera]) => {
+          rayCaster.setFromCamera(point, camera);
           return rayCaster.intersectObjects(group.children);
         }),
         map(v => v.length > 0 && v[0].object instanceof Mesh ? v[0].object : null),
@@ -126,7 +137,7 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
     });
 
     const mouseMoveScene$ = combineLatest(
-      mouseMove$, this.windowSize$.pipe(filter(v => v.x > 0)), frame$,
+      mouseMove$, windowSize$.pipe(filter(v => v.x > 0)), frame$,
       mouseToScenePos
     );
 
@@ -184,7 +195,7 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
       scene.add(fieldGroup);
 
       const onCelClicked$ = mouseDown$.pipe(
-        switchMap(mouseEvent => this.windowSize$.pipe(
+        switchMap(mouseEvent => windowSize$.pipe(
           map(wndSize => mouseToScenePos(mouseEvent, wndSize)),
           pointToMesh(cellGroup),
           take(1))
@@ -206,7 +217,7 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
       const atomsGroup = new THREE.Group();
       fieldGroup.add(atomsGroup);
 
-      const addAtomToScreenAction$ = atomGame.onNewAtom$.pipe(
+      const atomActions$ = atomGame.onNewAtom$.pipe(
         flatMap(atom => {
           const geometry = new THREE.SphereGeometry(cellSize / 4, 32, 32);
           const material = new THREE.MeshLambertMaterial( { color: 0xffffff } );
@@ -224,7 +235,6 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
 
       const rotateFieldAction$ = frame$.pipe(
         map(({time}) => () => {
-          ++this.nFrame;
           fieldGroup.rotation.y = Math.sin(time / 5000) / 3;
           fieldGroup.rotation.x = Math.sin(time / 7000) / 4;
         }));
@@ -251,7 +261,7 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
         action$: merge(
           explodeAction$,
           addAtomToGameAction$,
-          addAtomToScreenAction$,
+          atomActions$,
           rotateFieldAction$,
           highlightHoverAction$
         )
@@ -266,6 +276,6 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
         }, initialScene)
       )));
 
-    return scene$.pipe(map(({scene}) => ({scene, camera: this.camera })));
+    return combineLatest(scene$, camera$).pipe(map(([{scene}, camera]) => ({ scene, camera })));
   }
 }

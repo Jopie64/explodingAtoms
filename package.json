@@ -1,6 +1,6 @@
 {
-  "name": "three-test",
-  "version": "0.0.0",
+  "name": "exploding_atoms",
+  "version": "0.0.1",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --host 0.0.0.0 --disable-host-check",

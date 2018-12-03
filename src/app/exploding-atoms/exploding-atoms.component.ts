@@ -39,11 +39,11 @@ const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
 };
 
 @Component({
-  selector: 'app-three-test',
-  templateUrl: './three-test.component.html',
-  styleUrls: ['./three-test.component.css']
+  selector: 'app-exploding-atoms',
+  templateUrl: './exploding-atoms.component.html',
+  styleUrls: ['./exploding-atoms.component.css']
 })
-export class ThreeTestComponent implements OnInit, AfterViewInit, OnDestroy {
+export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @ViewChild('rendererContainer') rendererContainer: ElementRef;
 

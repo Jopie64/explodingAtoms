@@ -1,2 +1,2 @@
-<div #rendererContainer (window:resize)="onResize()"></div>
+<div #rendererContainer (window:resize)="onResize()" (window:keypress)="keyPress$.next($event)"></div>
 <div id="info">{{nFrame}}</div>

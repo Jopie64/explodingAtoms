@@ -5,6 +5,7 @@ import { map, filter, take, scan, distinctUntilChanged,
   switchMap, refCount, publish, flatMap, publishReplay, takeUntil, takeWhile } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 import { makeAtomGame, AtomState, Atom } from '../atomGame';
+import { Key } from 'protractor';
 
 export interface Vector2d {
     x: number;
@@ -15,6 +16,7 @@ export interface AtomSceneInput {
     windowSize$: Observable<Vector2d>;
     mouseMove$: Observable<MouseEvent>;
     mouseDown$: Observable<MouseEvent>;
+    keyPress$: Observable<KeyboardEvent>;
     size: number;
     divisions: number;
 }
@@ -55,7 +57,9 @@ const vectorDistance2 = (diff: Vector2d) => {
 const vectorDistance = (diff: Vector2d) => Math.sqrt(vectorDistance2(diff));
 
 
-export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, divisions }: AtomSceneInput): Observable<SceneState> => {
+export const buildAtomScene$ = ({
+  mouseMove$, mouseDown$, windowSize$,
+  keyPress$, size, divisions }: AtomSceneInput): Observable<SceneState> => {
 
     const toScenePos = (() => {
         const planeSize = size / divisions;
@@ -231,7 +235,7 @@ export const buildAtomScene$ = ({ mouseMove$, mouseDown$, windowSize$, size, div
           })
         ));
 
-      const explodeAction$ = timer(1000, 1000).pipe(
+      const explodeAction$ = merge(timer(1000, 1000), keyPress$.pipe(filter(v => v.code === 'Space'))).pipe(
         map(_ => () => atomGame.explode()));
 
       return {

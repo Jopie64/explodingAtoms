@@ -16,7 +16,7 @@ import { Vector2d, buildAtomScene$, AtomSceneInput } from './atomScene';
 })
 export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy {
 
-  @ViewChild('rendererContainer') rendererContainer: ElementRef;
+  @ViewChild('rendererContainer', { static: true }) rendererContainer: ElementRef;
 
   nFrame = 0;
 

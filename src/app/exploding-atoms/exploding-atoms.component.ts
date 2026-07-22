@@ -7,7 +7,8 @@ import { Vector2d, buildAtomScene$, AtomSceneInput } from './atomScene';
 @Component({
   selector: 'app-exploding-atoms',
   templateUrl: './exploding-atoms.component.html',
-  styleUrls: ['./exploding-atoms.component.css']
+  styleUrls: ['./exploding-atoms.component.css'],
+  standalone: false
 })
 export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy {
 

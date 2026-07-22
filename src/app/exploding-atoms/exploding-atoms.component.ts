@@ -1,13 +1,8 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { Subscription, fromEvent, Observable, BehaviorSubject,
-  combineLatest, of, Subject } from 'rxjs';
-import { tap, switchMap, mapTo } from 'rxjs/operators';
+import { Subscription, fromEvent, Observable, BehaviorSubject, combineLatest, of, Subject } from 'rxjs';
+import { tap, switchMap, map } from 'rxjs/operators';
 import { Vector2d, buildAtomScene$, AtomSceneInput } from './atomScene';
-
-// Following this example: https://stackoverflow.com/questions/40273300/angular-cli-threejs
-
-
 
 @Component({
   selector: 'app-exploding-atoms',
@@ -16,7 +11,7 @@ import { Vector2d, buildAtomScene$, AtomSceneInput } from './atomScene';
 })
 export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy {
 
-  @ViewChild('rendererContainer', { static: true }) rendererContainer: ElementRef;
+  @ViewChild('rendererContainer') rendererContainer!: ElementRef<HTMLDivElement>;
 
   nFrame = 0;
 
@@ -27,12 +22,11 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
 
   constructor() {
     this.onResize();
-
   }
 
   ngAfterViewInit() {
-    const mouseMove$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousemove');
-    const mouseDown$: Observable<MouseEvent> = fromEvent(this.rendererContainer.nativeElement, 'mousedown');
+    const mouseMove$: Observable<MouseEvent> = fromEvent<MouseEvent>(this.rendererContainer.nativeElement, 'mousemove');
+    const mouseDown$: Observable<MouseEvent> = fromEvent<MouseEvent>(this.rendererContainer.nativeElement, 'mousedown');
 
     const atomSceneInput: AtomSceneInput = {
       windowSize$: this.windowSize$,
@@ -47,14 +41,13 @@ export class ExplodingAtomsComponent implements OnInit, AfterViewInit, OnDestroy
       tap(renderer => this.rendererContainer.nativeElement.appendChild(renderer.domElement)),
       switchMap(renderer => this.windowSize$.pipe(
         tap(({x, y}) => renderer.setSize(x, y)),
-        mapTo(renderer)
+        map(() => renderer)
       ))
     );
-    this.cons.add(combineLatest(renderer$, buildAtomScene$(atomSceneInput)).subscribe(([renderer, v]) => {
+    this.cons.add(combineLatest([renderer$, buildAtomScene$(atomSceneInput)]).subscribe(([renderer, v]) => {
       renderer.render(v.scene, v.camera);
     }));
   }
-
 
   ngOnInit() {
   }

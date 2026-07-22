@@ -1,11 +1,9 @@
 import * as THREE from 'three';
 import { Observable, combineLatest, OperatorFunction, defer, merge, timer } from 'rxjs';
 import { msElapsed } from '../tools';
-import { map, filter, take, scan, distinctUntilChanged,
-  switchMap, refCount, publish, flatMap, publishReplay, takeUntil, takeWhile } from 'rxjs/operators';
+import { map, filter, take, scan, distinctUntilChanged, switchMap, mergeMap, shareReplay, share, takeWhile } from 'rxjs/operators';
 import { Mesh, MeshLambertMaterial, Object3D } from 'three';
 import { makeAtomGame, AtomState, Atom } from '../atomGame';
-import { Key } from 'protractor';
 
 export interface Vector2d {
     x: number;
@@ -40,13 +38,14 @@ const meshEqualPred = (a: Mesh | null, b: Mesh | null): boolean => {
 };
 
 const frame$ = msElapsed().pipe(
-    scan<number, ({prev: number, diff: number, curr: number})>(({curr}, newCurr: number) => ({
-      prev: curr,
-      diff: newCurr - curr,
+    scan<number, { prev: number; diff: number; curr: number }>((acc, newCurr: number) => ({
+      prev: acc.curr,
+      diff: newCurr - acc.curr,
       curr: newCurr
     }), { prev: 0, diff: 0, curr: 0 }),
-    map(({diff, curr}) => ({ diff, time: curr })),
-    publish(), refCount());
+    map(({ diff, curr }) => ({ diff, time: curr })),
+    share()
+);
 
 const vectorAdd = (a: Vector2d, b: Vector2d): Vector2d => ({ x: b.x + a.x, y: b.y + a.y });
 const vectorMult = (a: Vector2d, mult: number): Vector2d => ({ x: a.x * mult, y: a.y * mult });
@@ -74,18 +73,20 @@ export const buildAtomScene$ = ({
 
     const camera$ = windowSize$.pipe(
       map(({x, y}) => {
-        const camera = new THREE.PerspectiveCamera(75, x / y, 1, 10000);
+        const aspect = y > 0 ? x / y : 1;
+        const camera = new THREE.PerspectiveCamera(75, aspect, 1, 10000);
         camera.position.z = 10;
         camera.updateProjectionMatrix();
         return camera;
       }),
-      publishReplay(1), refCount());
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
 
     const rayCaster = new THREE.Raycaster();
     const pointToMesh = (group: Object3D): OperatorFunction<Vector2d, Mesh | null> => point$ =>
-      combineLatest(point$, camera$).pipe(
+      combineLatest([point$, camera$]).pipe(
         map(([point, camera]) => {
-          rayCaster.setFromCamera(point, camera);
+          rayCaster.setFromCamera(point as THREE.Vector2, camera);
           return rayCaster.intersectObjects(group.children);
         }),
         map(v => v.length > 0 && v[0].object instanceof Mesh ? v[0].object : null),
@@ -96,9 +97,10 @@ export const buildAtomScene$ = ({
       y: - ( event.clientY / wndSize.y ) * 2 + 1
     });
 
-    const mouseMoveScene$ = combineLatest(
-      mouseMove$, windowSize$.pipe(filter(v => v.x > 0)), frame$,
-      mouseToScenePos
+    const mouseMoveScene$ = combineLatest([
+      mouseMove$, windowSize$.pipe(filter(v => v.x > 0)), frame$
+    ]).pipe(
+      map(([mouseEvent, wndSize]) => mouseToScenePos(mouseEvent, wndSize))
     );
 
     interface InternalSceneState {
@@ -156,7 +158,7 @@ export const buildAtomScene$ = ({
     const initialScene$ = defer(async (): Promise<InternalSceneState> => {
       const atomGame = makeAtomGame(size, size);
       const scene = new THREE.Scene();
-      scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.35 )); // soft white light
+      scene.add( new THREE.AmbientLight( 0xa0a0a0, 0.35 ));
       const light = new THREE.DirectionalLight( 0xffffff, 0.8 );
       light.position.set( 1, 1, 1 ).normalize();
       scene.add( light );
@@ -191,8 +193,7 @@ export const buildAtomScene$ = ({
           pointToMesh(cellGroup),
           take(1))
         ),
-        // tslint:disable-next-line:no-non-null-assertion
-        filter(v => v != null), map(v => v!),
+        filter((v): v is Mesh => v != null),
         map(v => JSON.parse(v.name).plane as Vector2d));
 
       const currHover$ = mouseMoveScene$.pipe(
@@ -209,7 +210,7 @@ export const buildAtomScene$ = ({
       fieldGroup.add(atomsGroup);
 
       const atomActions$ = atomGame.onNewAtom$.pipe(
-        flatMap(atom => {
+        mergeMap(atom => {
             const { mesh, action$ } = makeAtomBehavior(atom);
             atomsGroup.add(mesh);
             return action$;
@@ -222,7 +223,7 @@ export const buildAtomScene$ = ({
         }));
 
       // highlight hovered items
-      const highlightHoverAction$ = combineLatest(currHover$, frame$).pipe(
+      const highlightHoverAction$ = combineLatest([currHover$, frame$]).pipe(
         map(([currHover, {diff}]) => () =>
           cellGroup.children.forEach(cel => {
             if (cel instanceof Mesh && cel.material instanceof MeshLambertMaterial) {
@@ -236,7 +237,7 @@ export const buildAtomScene$ = ({
         ));
 
       const explodeAction$ = merge(timer(1000, 1000), keyPress$.pipe(filter(v => v.code === 'Space'))).pipe(
-        map(_ => () => atomGame.explode()));
+        map(() => () => atomGame.explode()));
 
       return {
         scene,
@@ -258,5 +259,5 @@ export const buildAtomScene$ = ({
         }, initialScene)
       )));
 
-    return combineLatest(scene$, camera$).pipe(map(([{scene}, camera]) => ({ scene, camera })));
+    return combineLatest([scene$, camera$]).pipe(map(([{scene}, camera]) => ({ scene, camera })));
 };

@@ -1,4 +1,4 @@
-import { Observable, Subject, empty, BehaviorSubject } from 'rxjs';
+import { Observable, Subject, BehaviorSubject } from 'rxjs';
 
 export interface AtomPos {
     x: number;
@@ -36,8 +36,8 @@ export const makeAtomGame = (sx: number, sy: number): AtomGame => {
     let player = 0;
 
     const toIx = ({x, y}: AtomPos) => y * sx + x;
-    const isEdgeX = x => x === 0 || x === sx - 1;
-    const isEdgeY = y => y === 0 || y === sy - 1;
+    const isEdgeX = (x: number) => x === 0 || x === sx - 1;
+    const isEdgeY = (y: number) => y === 0 || y === sy - 1;
     const field: InternalAtom[][] = [];
 
     // Initialize empty cells
@@ -61,7 +61,6 @@ export const makeAtomGame = (sx: number, sy: number): AtomGame => {
     const moveAtom = (from: AtomPos, to: AtomPos) => {
         const celFrom = field[toIx(from)];
         const celTo   = field[toIx(to)];
-        // tslint:disable-next-line:no-non-null-assertion
         const atom = celFrom.pop()!;
         celTo.push(atom);
         celTo.forEach((i, ix) => {

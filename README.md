@@ -26,10 +26,10 @@ Instead of traditional imperative event loops, game state transformations, mouse
 
 ## 🛠️ Tech Stack
 
-- **Framework**: [Angular 20](https://angular.dev/)
+- **Framework**: [Angular 21](https://angular.dev/)
 - **Reactive Stream Engine**: [RxJS 7](https://rxjs.dev/)
-- **3D Graphics & WebGL**: [Three.js 0.185](https://threejs.org/)
-- **Language**: TypeScript 5.8
+- **3D Graphics & WebGL**: [Three.js 0.185.1](https://threejs.org/)
+- **Language**: TypeScript 5.9
 
 
 ---

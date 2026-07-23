@@ -5,7 +5,8 @@
     "ng": "ng",
     "start": "ng serve --host 0.0.0.0",
     "build": "ng build",
-    "test": "ng test"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "private": true,
   "dependencies": {
@@ -23,18 +24,15 @@
     "zone.js": "~0.16.2"
   },
   "devDependencies": {
+    "@analogjs/vite-plugin-angular": "^2.6.4",
+    "@analogjs/vitest-angular": "^2.6.4",
     "@angular/build": "^21.2.19",
     "@angular/cli": "~21.2.19",
     "@angular/compiler-cli": "~21.2.18",
-    "@types/jasmine": "~6.0.0",
     "@types/node": "^20.19.0",
     "@types/three": "^0.185.1",
-    "jasmine-core": "~6.3.0",
-    "karma": "~6.4.4",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.1",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.2.0",
-    "typescript": "~5.9.3"
+    "jsdom": "^29.1.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.10"
   }
 }

@@ -14,5 +14,5 @@ export const duration = (durMs: number, scheduler = animationFrameScheduler) =>
     takeWhile(v => v <= 1)
   );
 
-export const ease = f =>
-  map(f as (n: number) => number);
+export const ease = (f: (n: number) => number) =>
+  map(f);
